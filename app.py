@@ -33,7 +33,6 @@ class TutorState(dict):
 
 # --- LangGraph Nodes ---
 
-# 1. Translation Node (input -> English)
 def translate_node(state):
     if state["lang"].lower() != "english":
         translated = GoogleTranslator(source='auto', target='en').translate(state["question"])
@@ -42,7 +41,6 @@ def translate_node(state):
     state["translated"] = translated
     return state
 
-# 2. Intent Node (detect topic dynamically using Gemini)
 def intent_node(state):
     prompt = f"What school subject does the following question belong to?\n\nQuestion: \"{state['translated']}\""
     try:
@@ -64,14 +62,12 @@ def intent_node(state):
     state["grade"] = "Grade 6"
     return state
 
-# 3. Wikipedia Retriever
 def retrieve_node(state):
     retriever = WikipediaRetriever()
     docs = retriever.get_relevant_documents(state["translated"])
     state["docs"] = docs[0].page_content if docs else "No content found"
     return state
 
-# 4. Answer Generator using Gemini
 def generate_answer_node(state):
     prompt = f"""
 You are an AI tutor helping a {state['grade']} student understand the topic: {state['topic']}.
@@ -84,17 +80,14 @@ Context:
     state["answer"] = response.text
     return state
 
-# 5. Progress Tracker (can log/save later)
 def progress_node(state):
     return state
 
-# 6. Feedback Generator
 def feedback_node(state):
     topic = state.get("topic", "this topic")
     state["feedback"] = f"🎉 Great job! Want to learn more about {topic}?"
     return state
 
-# 7. Translate Output Back to User's Language
 def translate_back_node(state):
     target_lang = LANGUAGE_CODES.get(state["lang"], "en")
     if target_lang != "en":
@@ -106,27 +99,6 @@ def translate_back_node(state):
         except Exception as e:
             state["answer"] += f"\n\n(⚠️ Translation failed: {str(e)})"
     return state
-
-# --- LangGraph Workflow Setup ---
-graph = StateGraph(TutorState)
-
-graph.add_node("translate", RunnableLambda(translate_node))
-graph.add_node("intent", RunnableLambda(intent_node))
-graph.add_node("retrieve", RunnableLambda(retrieve_node))
-graph.add_node("generate", RunnableLambda(generate_answer_node))
-graph.add_node("progress", RunnableLambda(progress_node))
-graph.add_node("feedback", RunnableLambda(feedback_node))
-graph.add_node("translate_back", RunnableLambda(translate_back_node))
-
-graph.set_entry_point("translate")
-graph.add_edge("translate", "intent")
-graph.add_edge("intent", "retrieve")
-graph.add_edge("retrieve", "generate")
-graph.add_edge("generate", "progress")
-graph.add_edge("progress", "feedback")
-graph.add_edge("feedback", "translate_back")
-
-chain = graph.compile()
 
 # --- Streamlit Frontend ---
 st.set_page_config(page_title="EduGraph Tutor", layout="wide")
@@ -143,15 +115,65 @@ if "answer" not in st.session_state:
     st.session_state.answer = ""
     st.session_state.feedback = ""
 
-if run and question:
-    with st.spinner("Thinking..."):
-        result = chain.invoke({
-            "question": question,
-            "lang": lang
-        })
-        st.session_state.answer = result["answer"]
-        st.session_state.feedback = result["feedback"]
+# === Step Progress UI ===
+def display_progress(current_step: str):
+    steps = [
+        "📝 Translation",
+        "🔍 Intent Detection",
+        "📚 Retrieval",
+        "🤖 Answer",
+        "📊 Progress",
+        "💬 Feedback"
+    ]
+    status_line = ""
+    for step in steps:
+        if steps.index(step) < steps.index(current_step):
+            status_line += f"✅ {step} → "
+        elif step == current_step:
+            status_line += f"➡️ **{step}** → "
+        else:
+            status_line += f"🔄 {step} → "
+    return status_line.rstrip("→ ")
 
+# === Main Execution ===
+if run and question:
+    st.subheader("🔄 LangGraph Step Progress")
+    progress_placeholder = st.empty()
+
+    state = {
+        "question": question,
+        "lang": lang
+    }
+
+    # Each node with visual update
+    progress_placeholder.markdown(display_progress("📝 Translation"))
+    state = translate_node(state)
+
+    progress_placeholder.markdown(display_progress("🔍 Intent Detection"))
+    state = intent_node(state)
+
+    progress_placeholder.markdown(display_progress("📚 Retrieval"))
+    state = retrieve_node(state)
+
+    progress_placeholder.markdown(display_progress("🤖 Answer"))
+    state = generate_answer_node(state)
+
+    progress_placeholder.markdown(display_progress("📊 Progress"))
+    state = progress_node(state)
+
+    progress_placeholder.markdown(display_progress("💬 Feedback"))
+    state = feedback_node(state)
+
+    # Final translation
+    state = translate_back_node(state)
+
+    # Show final state
+    progress_placeholder.markdown("✅✅ **All Steps Completed Successfully!**")
+
+    st.session_state.answer = state["answer"]
+    st.session_state.feedback = state["feedback"]
+
+# === Output Rendering ===
 if st.session_state.answer:
     st.markdown("### ✅ AI Tutor Answer")
     st.write(st.session_state.answer)
