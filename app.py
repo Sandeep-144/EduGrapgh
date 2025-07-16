@@ -69,6 +69,20 @@ def feedback_node(state):
     state["feedback"] = f"🎉 Great job! Want to learn more about {state['topic']}?"
     return state
 
+# 7. Translate Output Back to User's Language
+def translate_back_node(state):
+    target_lang = state["lang"].lower()
+    if target_lang != "english":
+        try:
+            translated_answer = GoogleTranslator(source='auto', target=target_lang).translate(state["answer"])
+            translated_feedback = GoogleTranslator(source='auto', target=target_lang).translate(state["feedback"])
+            state["answer"] = translated_answer
+            state["feedback"] = translated_feedback
+        except Exception as e:
+            state["answer"] += f"\n\n(⚠️ Translation failed: {str(e)})"
+    return state
+
+
 # --- LangGraph Workflow Setup ---
 graph = StateGraph(TutorState)
 
@@ -78,6 +92,7 @@ graph.add_node("retrieve", RunnableLambda(retrieve_node))
 graph.add_node("generate", RunnableLambda(generate_answer_node))
 graph.add_node("progress", RunnableLambda(progress_node))
 graph.add_node("feedback", RunnableLambda(feedback_node))
+graph.add_node("translate_back", RunnableLambda(translate_back_node))  
 
 graph.set_entry_point("translate")
 graph.add_edge("translate", "intent")
@@ -85,6 +100,7 @@ graph.add_edge("intent", "retrieve")
 graph.add_edge("retrieve", "generate")
 graph.add_edge("generate", "progress")
 graph.add_edge("progress", "feedback")
+graph.add_edge("feedback", "translate_back")
 
 chain = graph.compile()
 
