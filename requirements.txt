@@ -1,0 +1,8 @@
+streamlit>=1.33.0
+langgraph>=0.0.32
+langchain>=0.1.16
+langchain-community>=0.0.30
+langchain-core>=0.1.41
+google-generativeai>=0.4.1
+deep-translator>=1.11.4
+wikipedia>=1.4.0
